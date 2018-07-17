@@ -2,13 +2,12 @@
 
 import torch
 
-import vocoder
+from vocoder import Vocoder
 
 def main():
-    fanins = [2, 2]
-    enc = vocoder.Encoder(fanins, 32, 512, 2)
+    vocoder = Vocoder()
     data = torch.randn(10, 4)
-    enc(data)
+    vocoder(data)
 
 if __name__ == '__main__':
     main()

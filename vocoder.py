@@ -51,7 +51,7 @@ class Encoder(torch.nn.Module):
         # The data has shape (batch size × num frames × frame size)
         # TODO assert that the signal is a multiple of the frame size
         (batch_size, num_frames) = samples.size()
-        samples.unsqueeze_(2)
+        samples = samples.unsqueeze(2)
 
         conditioning = None
         for tier in self.tiers:
@@ -75,8 +75,33 @@ class TrainingDecoder(torch.nn.Module):
         self.tiers = torch.nn.ModuleList([
             SampleRnnTier(input_size, hidden_size, hidden_size, output_size, num_layers)
             for input_size, output_size in zip(input_sizes, output_sizes)])
+        self.encoding_filter = torch.nn.Linear(encoded_bits, hidden_size)
 
     def forward(self, samples, encodings):
-        conditioning = encodings
+        (batch_size, signal_size) = samples.size()
+        frame_size = 4 #TODO
+        num_frames = signal_size / frame_size
+        conditioning = self.encoding_filter(encodings)
         for tier in self.tiers:
-            pass
+            samples = samples.view(batch_size, num_frames, -1)
+            conditioning = conditioning.view(batch_size, num_frames, -1)
+            padded_samples = torch.cat([torch.zeros(batch_size, 1, samples.size()[-1]), samples], dim=1)[:, :-1, :]
+            conditioning = tier(padded_samples, conditioning)
+            fan_out = 2 # TODO
+            num_frames *= fan_out
+
+        return conditioning
+
+
+class Vocoder(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        fanins = [2, 2]
+        self.encoder = Encoder(fanins, 32, 512, 2)
+        self.decoder = TrainingDecoder(fanins, 32, 512, 2)
+
+    def forward(self, samples):
+        encoded = self.encoder(samples)
+        decoded = self.decoder(samples, encoded)
+        return decoded
