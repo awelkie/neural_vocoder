@@ -11,6 +11,12 @@ class SampleRnnTier(torch.nn.Module):
     def __init__(self, signal_size: int, conditioning_size: int, hidden_size: int, output_size: int, num_layers: int):
         super().__init__()
 
+        self.signal_size = signal_size
+        self.conditioning_size = conditioning_size
+        self.hidden_size = hidden_size
+        self.output_size = output_size
+        self.num_layers = num_layers
+
         self.rnn = torch.nn.GRU(
             input_size=signal_size + conditioning_size,
             hidden_size=hidden_size,
@@ -42,7 +48,7 @@ class Encoder(torch.nn.Module):
 
     @property
     def frame_len(self):
-        pass
+        return self.tiers[-1].signal_size
 
     def forward(self, samples):
         """
@@ -69,14 +75,17 @@ class TrainingDecoder(torch.nn.Module):
     def __init__(self, fanouts: List[int], encoded_bits, hidden_size, num_layers):
         super().__init__()
 
+        self.q_levels = 256
+
         input_sizes = reversed(numpy.cumprod([1] + fanouts))
-        output_sizes = [fanout * hidden_size for fanout in fanouts] + [1]
+        output_sizes = [fanout * hidden_size for fanout in fanouts] + [self.q_levels]
         # The tier that takes the encoding as conditioning is first
         self.tiers = torch.nn.ModuleList([
             SampleRnnTier(input_size, hidden_size, hidden_size, output_size, num_layers)
             for input_size, output_size in zip(input_sizes, output_sizes)])
         self.encoding_filter = torch.nn.Linear(encoded_bits, hidden_size)
 
+    # TODO make `samples` optional, and if missing do generation
     def forward(self, samples, encodings):
         (batch_size, signal_size) = samples.size()
         frame_size = 4 #TODO
@@ -90,7 +99,7 @@ class TrainingDecoder(torch.nn.Module):
             fan_out = 2 # TODO
             num_frames *= fan_out
 
-        return conditioning
+        return torch.nn.functional.log_softmax(conditioning)
 
 
 class Vocoder(torch.nn.Module):
